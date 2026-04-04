@@ -857,7 +857,7 @@ function applyFilters() {
   }
   container.innerHTML =
     sectionHtml('🔴 En cours / se termine bientôt', live) +
-    sectionHtml('⏰ À venir aujourd\'hui', upcoming);
+    sectionHtml("⏰ À venir aujourd'hui", upcoming);
 }
 
 function renderSport(markets) {
