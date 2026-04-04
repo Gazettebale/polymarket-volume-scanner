@@ -1,103 +1,103 @@
 # ⚡ Polymarket Volume Scanner
 
-> **Coach de trading manuel pour Polymarket** — Génère du volume leaderboard sans perdre d'argent.
+> **Manual trading coach for Polymarket** — Generate leaderboard volume without losing money.
 
-![Dashboard Preview](https://img.shields.io/badge/Python-3.9+-blue) ![Flask](https://img.shields.io/badge/Flask-Web_Dashboard-green) ![Polymarket](https://img.shields.io/badge/Polymarket-CLOB-purple)
+![Python](https://img.shields.io/badge/Python-3.9+-blue) ![Flask](https://img.shields.io/badge/Flask-Web_Dashboard-green) ![Polymarket](https://img.shields.io/badge/Polymarket-CLOB-purple)
 
 ---
 
-## 🎯 Stratégie
+## 🎯 Strategy
 
-Achète à la limite BID (= MAKER = **0 fees**), revends au BID suivant (breakeven) ou à l'ASK (+profit).
-**25 aller-retours × $400 = $10 000 de volume** avec ~$200 de capital.
+Buy at the BID limit (= MAKER = **0 fees**), sell at the next BID (breakeven) or at the ASK (+profit).
+**25 round-trips × $400 = $10,000 in volume** with ~$200 capital.
 
 ```
-BUY LIMIT  13.4¢  →  SELL LIMIT  13.5¢  →  profit : +$1.47 par round-trip
+BUY LIMIT  13.4¢  →  SELL LIMIT  13.5¢  →  profit: +$1.47 per round-trip
 ```
 
 ---
 
 ## 🚀 Installation
 
-### 1. Clone le repo
+### 1. Clone the repo
 ```bash
 git clone https://github.com/Gazettebale/polymarket-volume-scanner.git
 cd polymarket-volume-scanner
 ```
 
-### 2. Installe les dépendances
+### 2. Install dependencies
 ```bash
 pip3 install requests flask
 ```
 
-### 3. Configure ton wallet (optionnel)
+### 3. Configure your wallet (optional)
 ```bash
 cp .env.example .env
-# Édite .env et mets ton adresse wallet Polymarket
+# Edit .env and add your Polymarket wallet address
 ```
 
-### 4. Lance le dashboard web
+### 4. Launch the web dashboard
 ```bash
 python3 web_dashboard.py
 ```
-Ouvre **http://localhost:8080** dans ton navigateur.
+Open **http://localhost:8080** in your browser.
 
-### 5. Ou lance le scanner terminal
+### 5. Or run the terminal scanner
 ```bash
-python3 polymarket_scanner.py              # Scan complet
-python3 polymarket_scanner.py --watch      # Refresh auto toutes les 60s
-python3 polymarket_scanner.py --whale      # Whale tracker uniquement
-python3 polymarket_scanner.py --top 10     # Top 10 marchés
+python3 polymarket_scanner.py              # Full scan
+python3 polymarket_scanner.py --watch      # Auto-refresh every 60s
+python3 polymarket_scanner.py --whale      # Whale tracker only
+python3 polymarket_scanner.py --top 10     # Show top 10 markets
 ```
 
 ---
 
-## 📊 Dashboard Web
+## 📊 Web Dashboard
 
-3 onglets :
+3 tabs:
 
-| Onglet | Description |
-|--------|-------------|
-| 📊 **Top Marchés** | Meilleurs marchés pour générer du volume (spread serré, haut volume) |
-| ⚽ **Sport du Jour** | Matchs en cours et à venir dans les 24h (UFC, NBA, foot, tennis...) |
-| 🐋 **Whale Tracker** | Activité des 41 meilleurs traders Polymarket en temps réel |
+| Tab | Description |
+|-----|-------------|
+| 📊 **Top Markets** | Best markets for volume generation (tight spread, high volume) |
+| ⚽ **Sport of the Day** | Live & upcoming matches in the next 24h (UFC, NBA, soccer, tennis...) |
+| 🐋 **Whale Tracker** | Real-time activity of 41 top Polymarket traders |
 
 ---
 
-## 🧠 Comment ça marche
+## 🧠 How it works
 
-### Scoring des marchés
-Chaque marché reçoit un score sur 100 basé sur :
-- **Spread** (35 pts) — plus le spread est serré, mieux c'est
-- **Volume 24h** (25 pts) — plus de volume = plus de fills
-- **Prix** (20 pts) — prix ni trop extrême ni trop central
-- **Oscillation** (20 pts) — le marché bounce-t-il régulièrement ?
+### Market Scoring
+Each market gets a score out of 100 based on:
+- **Spread** (35 pts) — the tighter the spread, the better
+- **24h Volume** (25 pts) — more volume = faster fills
+- **Price** (20 pts) — not too extreme, not too central
+- **Oscillation** (20 pts) — does the market bounce regularly?
 
-### 0 fees MAKER
-Sur Polymarket CLOB, les ordres **LIMIT** (maker) ont **0% de frais**.
-Les ordres market (taker) coûtent 0.5–1.8%.
-→ On utilise **toujours des ordres limit** placés au BID ou à l'ASK.
+### 0 Fee MAKER Orders
+On Polymarket CLOB, **LIMIT orders** (maker) have **0% fees**.
+Market orders (taker) cost 0.5–1.8%.
+→ Always use **limit orders** placed at the BID or ASK.
 
 ### Whale Tracker
-41 wallets de top traders (win rate 53%–100%) organisés par tier :
+41 top trader wallets (53%–100% win rate) organized by tier:
 - 👑 LEGENDARY — 95%+ WR
 - 🏆 ELITE — 85–95% WR
 - 🥇 TOP — 80–85% WR
 - 🥈 HIGH — 70–80% WR
 - 🥉 SOLID — 60–70% WR
-- 📊 VOLUME — gros volumes
+- 📊 VOLUME — high volume traders
 
 ---
 
 ## ⚙️ Configuration
 
-Édite `config.py` pour ajuster :
+Edit `config.py` to adjust:
 
 ```python
-MIN_VOLUME_24H   = 50_000   # Volume minimum 24h
-MAX_SPREAD_CENTS = 1.0      # Spread max en cents
-TRADE_SIZE_USD   = 200      # Taille de chaque trade
-FETCH_LIMIT      = 300      # Marchés scannés par run
+MIN_VOLUME_24H   = 50_000   # Minimum 24h volume
+MAX_SPREAD_CENTS = 1.0      # Max spread in cents
+TRADE_SIZE_USD   = 200      # Size per trade
+FETCH_LIMIT      = 300      # Markets scanned per run
 ```
 
 ---
@@ -106,30 +106,30 @@ FETCH_LIMIT      = 300      # Marchés scannés par run
 
 ```
 polymarket-volume-scanner/
-├── polymarket_scanner.py   # Scanner principal + CLI
-├── web_dashboard.py        # Dashboard Flask
+├── polymarket_scanner.py   # Core scanner + CLI
+├── web_dashboard.py        # Flask dashboard
 ├── config.py               # Configuration
-├── .env.example            # Template variables d'env
+├── .env.example            # Environment variables template
 └── README.md
 ```
 
 ---
 
-## 🔗 APIs utilisées
+## 🔗 APIs Used
 
 | API | Usage |
 |-----|-------|
-| `gamma-api.polymarket.com` | Métadonnées marchés |
-| `clob.polymarket.com` | Orderbook temps réel |
-| `data-api.polymarket.com` | Activité wallets |
+| `gamma-api.polymarket.com` | Market metadata |
+| `clob.polymarket.com` | Real-time orderbook |
+| `data-api.polymarket.com` | Wallet activity |
 
-Toutes **publiques**, aucune clé API requise.
+All **public APIs** — no API key required.
 
 ---
 
 ## ⚠️ Disclaimer
 
-Cet outil est un **coach de trading manuel**. Il ne passe pas d'ordres automatiquement. Toutes les décisions de trading restent de ta responsabilité. Les marchés de prédiction comportent des risques.
+This tool is a **manual trading coach**. It does not place orders automatically. All trading decisions remain your responsibility. Prediction markets involve risk.
 
 ---
 
