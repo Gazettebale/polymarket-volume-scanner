@@ -604,6 +604,12 @@ HTML = """<!DOCTYPE html>
         <option value="tennis">Tennis</option>
         <option value="cs2">CS2/LoL</option>
       </select>
+      <label>Trier par</label>
+      <select id="f-sort" onchange="applyFilters()">
+        <option value="time">⏱ Temps restant</option>
+        <option value="volume">📈 Volume</option>
+        <option value="spread">💰 Spread</option>
+      </select>
       <span class="filter-count" id="sport-count"></span>
     </div>
     <div id="sport-container"></div>
@@ -847,6 +853,12 @@ function sectionHtml(title, markets, emptyMsg) {
 function applyFilters() {
   const container = document.getElementById('sport-container');
   const filtered  = _sportData.filter(sportMatchesFilter);
+  const sort = document.getElementById('f-sort').value;
+  filtered.sort((a, b) => {
+    if (sort === 'volume') return b.volume_24h - a.volume_24h;
+    if (sort === 'spread') return a.spread - b.spread;
+    return a.minutes_left - b.minutes_left;  // défaut: temps restant
+  });
   const live      = filtered.filter(m => m.is_live);
   const upcoming  = filtered.filter(m => !m.is_live);
   document.getElementById('sport-count').textContent = `${filtered.length} matchs`;
