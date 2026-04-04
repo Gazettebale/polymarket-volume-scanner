@@ -1,0 +1,15 @@
+{
+  "_comment": "Copy this file to whales.json and fill in your tracked wallets. whales.json is gitignored.",
+  "0xYOUR_WALLET_ADDRESS_1": {
+    "name": "TraderName1",
+    "win_rate": 85.0,
+    "rank": 100,
+    "tier": "ELITE"
+  },
+  "0xYOUR_WALLET_ADDRESS_2": {
+    "name": "TraderName2",
+    "win_rate": 65.0,
+    "rank": 250,
+    "tier": "SOLID"
+  }
+}
