@@ -1,4 +1,5 @@
 # ─── Polymarket Volume Scanner — Configuration ───────────────────────────────
+import os
 
 # Filtres marchés
 MIN_VOLUME_24H   = 50_000   # $50k minimum (élargi pour plus de candidats)
@@ -102,11 +103,11 @@ WHALE_WALLETS = {
     if info["tier"] in ("LEGENDARY", "ELITE")
 }
 
-# Ton wallet (pour exclure tes propres marchés actifs)
-MY_WALLET = "0xCB46AffadF07F3deBc1dCEf56b57108cbF793692"
+# Ton wallet (depuis .env → MY_WALLET=0x...)
+MY_WALLET = os.getenv("MY_WALLET", "")
 
 # ─── API endpoints ────────────────────────────────────────────────────────────
 GAMMA_API  = "https://gamma-api.polymarket.com"
 CLOB_API   = "https://clob.polymarket.com"
 DATA_API   = "https://data-api.polymarket.com"
-API_TIMEOUT = 8
+API_TIMEOUT = 15  # 15s pour les APIs lentes

@@ -941,8 +941,8 @@ function pollData() {
     .catch(e => console.error('fetch error:', e));
 }
 
-// Poll toutes les 2s jusqu'à affichage, puis toutes les 60s via startCountdown
-setInterval(pollData, 2000);
+// Poll toutes les 5s jusqu'à affichage, puis toutes les 60s via startCountdown
+setInterval(pollData, 5000);
 pollData();
 </script>
 </body>
