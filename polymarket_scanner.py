@@ -704,7 +704,7 @@ SPORT_KEYWORDS = [
     "cricket", "tennis", "open", "masters", "wimbledon", "roland garros",
     "formula 1", "motogp", "grand prix",
 ]
-SPORT_FETCH_LIMIT = 700  # UFC etc. peuvent être hors top 300
+SPORT_FETCH_LIMIT = 1500  # fetch étendu pour couvrir tous les sports
 
 def run_scanner_sport_du_jour(raw_markets: list = None) -> list:
     """
@@ -733,7 +733,7 @@ def run_scanner_sport_du_jour(raw_markets: list = None) -> list:
             except: continue
 
         if not tokens or len(tokens) < 2: continue
-        if vol < 5_000: continue
+        if vol < 2_000: continue
 
         # Filtre sport
         q_lower = q.lower()

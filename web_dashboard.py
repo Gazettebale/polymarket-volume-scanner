@@ -451,6 +451,32 @@ HTML = """<!DOCTYPE html>
     margin-bottom: 28px;
   }
 
+  /* ── Filtres ── */
+  .filter-bar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    background: #0d1117;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+  }
+  .filter-bar label { font-size: 11px; color: #8b949e; white-space: nowrap; }
+  .filter-bar select, .filter-bar input {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 5px;
+    color: #c9d1d9;
+    font-family: inherit;
+    font-size: 11px;
+    padding: 4px 8px;
+    cursor: pointer;
+  }
+  .filter-bar select:hover, .filter-bar input:hover { border-color: #58a6ff; }
+  .filter-count { font-size: 11px; color: #58a6ff; margin-left: auto; font-weight: 700; }
+
   /* ── Whale Tracker ── */
   .whale-grid {
     display: grid;
@@ -534,6 +560,43 @@ HTML = """<!DOCTYPE html>
     <div id="table-container"></div>
   </div>
   <div id="tab-sport" class="tab-panel">
+    <div class="filter-bar">
+      <label>Volume min</label>
+      <select id="f-vol" onchange="applyFilters()">
+        <option value="0">Tous</option>
+        <option value="5000">$5k+</option>
+        <option value="20000" selected>$20k+</option>
+        <option value="50000">$50k+</option>
+        <option value="100000">$100k+</option>
+      </select>
+      <label>Spread max</label>
+      <select id="f-spread" onchange="applyFilters()">
+        <option value="99">Tous</option>
+        <option value="0.5">0.5¢</option>
+        <option value="1" selected>1¢</option>
+        <option value="2">2¢</option>
+      </select>
+      <label>Prix min</label>
+      <select id="f-price" onchange="applyFilters()">
+        <option value="0" selected>Tous</option>
+        <option value="20">20¢+</option>
+        <option value="30">30¢+</option>
+        <option value="40">40¢+</option>
+      </select>
+      <label>Sport</label>
+      <select id="f-sport" onchange="applyFilters()">
+        <option value="">Tous</option>
+        <option value="ufc">UFC/MMA</option>
+        <option value="nba">NBA</option>
+        <option value="nhl">NHL</option>
+        <option value="mlb">MLB</option>
+        <option value="nfl">NFL</option>
+        <option value="soccer">Football</option>
+        <option value="tennis">Tennis</option>
+        <option value="cs2">CS2/LoL</option>
+      </select>
+      <span class="filter-count" id="sport-count"></span>
+    </div>
     <div id="sport-container"></div>
   </div>
   <div id="tab-whales" class="tab-panel">
@@ -678,22 +741,45 @@ function startCountdown() {
   }, 1000);
 }
 
-function renderSport(markets) {
-  const container = document.getElementById('sport-container');
+let _sportData = [];
 
-  if (!markets || markets.length === 0) {
-    container.innerHTML = `
-      <div class="no-50-msg">
-        Aucun match dans les 12 prochaines heures.<br>
-        Les matchs IPL, NBA, MLB... apparaissent ici automatiquement le jour J.
-      </div>`;
+function sportMatchesFilter(m) {
+  const vol    = parseFloat(document.getElementById('f-vol').value);
+  const spread = parseFloat(document.getElementById('f-spread').value);
+  const price  = parseFloat(document.getElementById('f-price').value);
+  const sport  = document.getElementById('f-sport').value.toLowerCase();
+  const q      = m.question.toLowerCase();
+
+  if (m.volume_24h < vol) return false;
+  if (m.spread > spread) return false;
+  if (m.bid < price) return false;
+  if (sport) {
+    const map = {
+      'ufc': ['ufc','mma','fight night'], 'nba': ['nba'], 'nhl': ['nhl'],
+      'mlb': ['mlb'], 'nfl': ['nfl'],
+      'soccer': ['premier league','champions league','ligue','bundesliga','serie a','la liga','balompié','fc ','cf ','sc ','will fc','will vf','will ss','will sc','will rc','will real','will club','will stade'],
+      'tennis': ['tennis','open','wimbledon','masters','atp','wta'],
+      'cs2': ['counter-strike','cs2','lol:','league of legends','esport','dota'],
+    };
+    const kws = map[sport] || [sport];
+    if (!kws.some(k => q.includes(k))) return false;
+  }
+  return true;
+}
+
+function applyFilters() {
+  const container = document.getElementById('sport-container');
+  const filtered = _sportData.filter(sportMatchesFilter);
+  document.getElementById('sport-count').textContent = `${filtered.length} matchs`;
+
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="no-50-msg">Aucun match avec ces filtres.</div>';
     return;
   }
 
-  const cards = markets.map(m => {
-    const spread_color = m.spread <= 0.2 ? '#3fb950' : m.spread <= 0.5 ? '#d29922' : '#f85149';
-    const urgency_color = m.minutes_left < 60 ? '#f85149' : m.minutes_left < 180 ? '#d29922' : '#58a6ff';
-
+  const cards = filtered.map(m => {
+    const spread_color   = m.spread <= 0.5 ? '#3fb950' : m.spread <= 1 ? '#d29922' : '#f85149';
+    const urgency_color  = m.minutes_left < 60 ? '#f85149' : m.minutes_left < 180 ? '#d29922' : '#58a6ff';
     return `
     <div class="card-50" onclick="window.open('${m.url}','_blank')">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -717,8 +803,21 @@ function renderSport(markets) {
       </div>
     </div>`;
   }).join('');
-
   container.innerHTML = `<div class="cards-grid">${cards}</div>`;
+}
+
+function renderSport(markets) {
+  _sportData = markets || [];
+  if (!_sportData.length) {
+    document.getElementById('sport-container').innerHTML = `
+      <div class="no-50-msg">
+        Aucun match dans les 12 prochaines heures.<br>
+        Les matchs IPL, NBA, UFC... apparaissent ici automatiquement le jour J.
+      </div>`;
+    document.getElementById('sport-count').textContent = '0 matchs';
+    return;
+  }
+  applyFilters();
 }
 
 const TIER_ICONS = {
