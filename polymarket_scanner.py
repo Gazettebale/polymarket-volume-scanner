@@ -785,6 +785,8 @@ def run_scanner_sport_du_jour(raw_markets: list = None) -> list:
         if not ob:
             continue
         bid, ask = ob["bid"], ob["ask"]
+        if bid < 0.10 or bid > 0.90:  # exclure prix extrêmes (NO implicite ou illiquide)
+            continue
         shares = int(200 / bid) if bid > 0 else 0
         c["bid"]       = round(bid * 100, 1)
         c["ask"]       = round(ask * 100, 1)
