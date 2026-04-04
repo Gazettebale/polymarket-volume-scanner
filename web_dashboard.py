@@ -9,7 +9,8 @@ import json
 import time
 import threading
 from datetime import datetime
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify
+from flask_socketio import SocketIO, emit
 
 from config import WATCH_INTERVAL_SECONDS, FETCH_LIMIT
 from polymarket_scanner import (
@@ -18,6 +19,7 @@ from polymarket_scanner import (
 )
 
 app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 # Cache global — mis à jour en background toutes les 60s
 _cache = {"markets": [], "sport_du_jour": [], "whales": [], "last_update": None, "loading": True}
@@ -25,6 +27,13 @@ _lock  = threading.Lock()
 
 
 # ─── Background scanner ───────────────────────────────────────────────────────
+def _emit_update():
+    """Envoie le cache actuel à tous les clients connectés via WebSocket."""
+    with _lock:
+        data = dict(_cache)
+    socketio.emit("update", data)
+
+
 def background_scan():
     """Scan principal (Top Marchés) — rapide, ~30s."""
     while True:
@@ -34,6 +43,7 @@ def background_scan():
                 _cache["markets"]     = [_serialize(m) for m in markets]
                 _cache["last_update"] = datetime.now().strftime("%H:%M:%S")
                 _cache["loading"]     = False
+            _emit_update()
         except Exception as e:
             print(f"[scanner] erreur: {e}")
         time.sleep(WATCH_INTERVAL_SECONDS)
@@ -46,9 +56,10 @@ def background_scan_sport():
             sport = run_scanner_sport_du_jour()
             with _lock:
                 _cache["sport_du_jour"] = sport
+            _emit_update()
         except Exception as e:
             print(f"[sport] erreur: {e}")
-        time.sleep(WATCH_INTERVAL_SECONDS * 3)  # refresh toutes les 3 min
+        time.sleep(WATCH_INTERVAL_SECONDS * 3)
 
 
 def background_scan_whales():
@@ -58,6 +69,7 @@ def background_scan_whales():
             whales = run_whale_tracker_api()
             with _lock:
                 _cache["whales"] = whales
+            _emit_update()
         except Exception as e:
             print(f"[whales] erreur: {e}")
         time.sleep(WATCH_INTERVAL_SECONDS * 2)
@@ -110,6 +122,7 @@ HTML = """<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Polymarket Volume Scanner</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -927,23 +940,32 @@ function renderWhales(whales) {
 
 let _rendered = false;
 
-function pollData() {
+// ── WebSocket (Socket.IO) — mise à jour instantanée ──
+const socket = io();
+
+socket.on('connect', () => {
+  console.log('WebSocket connecté');
+  // Demande les données actuelles dès la connexion
   fetch('/api/markets')
     .then(r => r.json())
-    .then(data => {
-      if (!data.loading) {
-        try { render(data); } catch(e) { console.error('render error:', e); }
-        try { renderSport(data.sport_du_jour); } catch(e) { console.error('sport error:', e); }
-        try { renderWhales(data.whales); } catch(e) { console.error('whale error:', e); }
-        if (!_rendered) { _rendered = true; startCountdown(); }
-      }
-    })
+    .then(data => handleData(data))
     .catch(e => console.error('fetch error:', e));
-}
+});
 
-// Poll toutes les 5s jusqu'à affichage, puis toutes les 60s via startCountdown
-setInterval(pollData, 5000);
-pollData();
+socket.on('update', data => handleData(data));
+
+socket.on('disconnect', () => {
+  document.getElementById('last-update').textContent = 'Reconnexion...';
+});
+
+function handleData(data) {
+  if (!data.loading) {
+    try { render(data); } catch(e) { console.error('render error:', e); }
+    try { renderSport(data.sport_du_jour); } catch(e) { console.error('sport error:', e); }
+    try { renderWhales(data.whales); } catch(e) { console.error('whale error:', e); }
+    if (!_rendered) { _rendered = true; startCountdown(); }
+  }
+}
 </script>
 </body>
 </html>"""
@@ -966,4 +988,4 @@ if __name__ == "__main__":
 
     print("\n  Polymarket Dashboard → http://localhost:8080")
     print("  Ctrl+C pour arrêter\n")
-    app.run(host="0.0.0.0", port=8080, debug=False, use_reloader=False)
+    socketio.run(app, host="0.0.0.0", port=8080, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)
