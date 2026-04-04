@@ -632,9 +632,14 @@ def run_scanner(top_n: int = 15, verbose: bool = True) -> list:
             token_id_yes = str(tokens[0])
             token_id_no  = str(tokens[1]) if len(tokens) > 1 else ""
 
+        # URL slug : utiliser le slug de l'event parent si dispo (évite les 404)
+        events = m.get("events", [])
+        event_slug = events[0].get("slug", "") if events else ""
+        url_slug = event_slug or m.get("slug", "")
+
         candidates.append(MarketOpportunity(
             question=q,
-            slug=m.get("slug", ""),
+            slug=url_slug,
             token_id_yes=token_id_yes,
             token_id_no=token_id_no,
             volume_24h=vol,

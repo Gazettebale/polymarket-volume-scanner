@@ -311,13 +311,40 @@ HTML = """<!DOCTYPE html>
   .tag-pol  { background: #1f2d1f; color: #56d364; }
   .tag-wc   { background: #1a2d3a; color: #79c0ff; }
 
+  /* ── Tabs ── */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #21262d;
+    padding-bottom: 0;
+  }
+  .tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #8b949e;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 10px 18px;
+    letter-spacing: 0.5px;
+    transition: color 0.15s, border-color 0.15s;
+    margin-bottom: -1px;
+  }
+  .tab:hover { color: #c9d1d9; }
+  .tab.active { color: #58a6ff; border-bottom-color: #1f6feb; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
   /* ── 50/50 section ── */
   .section-title {
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 1px;
     color: #8b949e;
-    margin: 28px 0 10px;
+    margin: 0 0 14px;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -497,19 +524,33 @@ HTML = """<!DOCTYPE html>
   </div>
   <div id="best-pick-container"></div>
 
-  <div class="section-title">🏓 Marchés 50/50 — Ping Pong</div>
-  <div id="cards-50-container"></div>
+  <nav class="tabs">
+    <button class="tab active" data-tab="volume">📊 Top Marchés</button>
+    <button class="tab" data-tab="pingpong">🏓 Ping Pong</button>
+    <button class="tab" data-tab="whales">🐋 Whale Tracker</button>
+  </nav>
 
-  <div class="section-title">🐋 Whale Tracker — Activité des top traders</div>
-  <div id="whale-container"></div>
-
-  <div class="section-title">📊 Top marchés — Volume &amp; Spread</div>
-  <div id="table-container"></div>
+  <div id="tab-volume" class="tab-panel active">
+    <div id="table-container"></div>
+  </div>
+  <div id="tab-pingpong" class="tab-panel">
+    <div id="cards-50-container"></div>
+  </div>
+  <div id="tab-whales" class="tab-panel">
+    <div id="whale-container"></div>
+  </div>
 </main>
 
 <script>
 let countdown = 60;
 let timer;
+
+// ── Tabs ──
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  const name = t.dataset.tab;
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x.dataset.tab === name));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+}));
 
 function fmt_vol(v) {
   if (v >= 1000000) return '$' + (v/1000000).toFixed(1) + 'M';
@@ -704,20 +745,26 @@ function renderWhales(whales) {
     const icon    = TIER_ICONS[w.tier] || '•';
     const tierCls = 'whale-tier-' + w.tier;
     const inactive = w.active ? '' : ' inactive';
+    const profileUrl = `https://polymarket.com/profile/${w.wallet}`;
     const mkts = w.markets.length
-      ? w.markets.map(m => `
+      ? w.markets.map(m => {
+          const buyTag  = m.buys  ? `<span style="color:#3fb950;font-weight:700">${m.buys} achat${m.buys>1?'s':''}</span>` : '';
+          const sellTag = m.sells ? `<span style="color:#f85149;font-weight:700">${m.sells} vente${m.sells>1?'s':''}</span>` : '';
+          const sep = m.buys && m.sells ? ' · ' : '';
+          return `
           <div class="whale-market">
-            <span class="whale-market-q">${m.question}</span>
-            <span class="whale-market-meta">${m.buys ? '<span style="color:#3fb950">'+m.buys+'B</span>' : ''}${m.sells ? ' <span style="color:#f85149">'+m.sells+'S</span>' : ''} · ${m.avg_price}¢</span>
-          </div>`).join('')
+            <span class="whale-market-q" title="${m.question}">${m.question}</span>
+            <span class="whale-market-meta">${buyTag}${sep}${sellTag} · <span style="color:#c9d1d9">${m.avg_price}¢</span></span>
+          </div>`;
+        }).join('')
       : '<div class="whale-no-activity">Aucune activité récente</div>';
     return `
       <div class="whale-card${inactive}">
         <div class="whale-header">
           <span>${icon}</span>
-          <span class="whale-name ${tierCls}">${w.name}</span>
+          <a href="${profileUrl}" target="_blank" class="whale-name ${tierCls}" style="text-decoration:none">${w.name} ↗</a>
           <span class="whale-badge">${w.tier}</span>
-          <span class="whale-wr">${w.win_rate}%</span>
+          <span class="whale-wr">${w.win_rate}% WR</span>
         </div>
         ${mkts}
       </div>`;
