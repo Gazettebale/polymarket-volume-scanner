@@ -913,27 +913,25 @@ function renderWhales(whales) {
   container.innerHTML = `<div class="whale-grid">${cards}</div>`;
 }
 
-async function fetchData() {
-  try {
-    const r = await fetch('/api/markets');
-    const data = await r.json();
-    if (!data.loading) {
-      render(data);
-      renderSport(data.sport_du_jour);
-      renderWhales(data.whales);
-      startCountdown();
-    } else {
-      document.getElementById('last-update').textContent = 'Scan en cours...';
-      setTimeout(fetchData, 3000);  // retry toutes les 3s tant que loading
-    }
-  } catch(e) {
-    document.getElementById('last-update').textContent = 'Erreur réseau';
-    setTimeout(fetchData, 5000);
-  }
+let _rendered = false;
+
+function pollData() {
+  fetch('/api/markets')
+    .then(r => r.json())
+    .then(data => {
+      if (!data.loading) {
+        try { render(data); } catch(e) { console.error('render error:', e); }
+        try { renderSport(data.sport_du_jour); } catch(e) { console.error('sport error:', e); }
+        try { renderWhales(data.whales); } catch(e) { console.error('whale error:', e); }
+        if (!_rendered) { _rendered = true; startCountdown(); }
+      }
+    })
+    .catch(e => console.error('fetch error:', e));
 }
 
-// Init
-fetchData();  // startCountdown() est appelé dans fetchData quand loading=false
+// Poll toutes les 2s jusqu'à affichage, puis toutes les 60s via startCountdown
+setInterval(pollData, 2000);
+pollData();
 </script>
 </body>
 </html>"""
@@ -941,7 +939,11 @@ fetchData();  // startCountdown() est appelé dans fetchData quand loading=false
 
 @app.route("/")
 def index():
-    return render_template_string(HTML)
+    from flask import make_response
+    resp = make_response(HTML)
+    resp.headers['Content-Type'] = 'text/html; charset=utf-8'
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return resp
 
 
 if __name__ == "__main__":
