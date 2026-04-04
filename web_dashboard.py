@@ -561,14 +561,6 @@ HTML = """<!DOCTYPE html>
   </div>
   <div id="tab-sport" class="tab-panel">
     <div class="filter-bar">
-      <label>Volume min</label>
-      <select id="f-vol" onchange="applyFilters()">
-        <option value="0">Tous</option>
-        <option value="5000">$5k+</option>
-        <option value="20000" selected>$20k+</option>
-        <option value="50000">$50k+</option>
-        <option value="100000">$100k+</option>
-      </select>
       <label>Spread max</label>
       <select id="f-spread" onchange="applyFilters()">
         <option value="99">Tous</option>
@@ -743,77 +735,120 @@ function startCountdown() {
 
 let _sportData = [];
 
+const SPORT_MAP = {
+  'ufc':    ['ufc','mma','fight night'],
+  'nba':    ['nba'],
+  'nhl':    ['nhl'],
+  'mlb':    ['mlb'],
+  'nfl':    ['nfl'],
+  'soccer': ['premier league','champions league','ligue','bundesliga','serie a','la liga','balompié','will fc','will vf','will ss','will sc','will rc','will real','will club','will stade','o/u 2.5','o/u 3.5','both teams'],
+  'tennis': ['tennis','open','wimbledon','masters','atp','wta'],
+  'cs2':    ['counter-strike','cs2','lol:','league of legends','dota'],
+};
+
 function sportMatchesFilter(m) {
-  const vol    = parseFloat(document.getElementById('f-vol').value);
   const spread = parseFloat(document.getElementById('f-spread').value);
   const price  = parseFloat(document.getElementById('f-price').value);
-  const sport  = document.getElementById('f-sport').value.toLowerCase();
+  const sport  = document.getElementById('f-sport').value;
   const q      = m.question.toLowerCase();
-
-  if (m.volume_24h < vol) return false;
   if (m.spread > spread) return false;
   if (m.bid < price) return false;
   if (sport) {
-    const map = {
-      'ufc': ['ufc','mma','fight night'], 'nba': ['nba'], 'nhl': ['nhl'],
-      'mlb': ['mlb'], 'nfl': ['nfl'],
-      'soccer': ['premier league','champions league','ligue','bundesliga','serie a','la liga','balompié','fc ','cf ','sc ','will fc','will vf','will ss','will sc','will rc','will real','will club','will stade'],
-      'tennis': ['tennis','open','wimbledon','masters','atp','wta'],
-      'cs2': ['counter-strike','cs2','lol:','league of legends','esport','dota'],
-    };
-    const kws = map[sport] || [sport];
+    const kws = SPORT_MAP[sport] || [sport];
     if (!kws.some(k => q.includes(k))) return false;
   }
   return true;
 }
 
+function sportIcon(q) {
+  q = q.toLowerCase();
+  if (q.includes('ufc') || q.includes('mma') || q.includes('fight night')) return '🥊';
+  if (q.includes('nba') || q.includes('spurs') || q.includes('lakers') || q.includes('celtics') ||
+      q.includes('heat') || q.includes('nuggets') || q.includes('wizards') || q.includes('warriors') ||
+      q.includes('knicks') || q.includes('bulls') || q.includes('nets') || q.includes('bucks') ||
+      q.includes('huskies') || q.includes('sooners') || q.includes('baylor') || q.includes('o/u 2') && q.includes('vs.') && !q.includes('goals')) return '🏀';
+  if (q.includes('nhl') || q.includes('red wings') || q.includes('rangers') || q.includes('wild') ||
+      q.includes('senators') || q.includes('avalanche') || q.includes('stars') || q.includes('flames') ||
+      q.includes('ducks') || q.includes('penguins') || q.includes('bruins') || q.includes('leafs')) return '🏒';
+  if (q.includes('mlb') || q.includes('cardinals') || q.includes('tigers') || q.includes('yankees') ||
+      q.includes('red sox') || q.includes('dodgers') || q.includes('brewers') || q.includes('royals')) return '⚾';
+  if (q.includes('nfl') || q.includes('chiefs') || q.includes('eagles') || q.includes('patriots')) return '🏈';
+  if (q.includes('tennis') || q.includes('wimbledon') || q.includes('roland') || q.includes('atp') ||
+      q.includes('wta') || q.includes('open') && q.includes('vs')) return '🎾';
+  if (q.includes('counter-strike') || q.includes('cs2') || q.includes('lol:') || q.includes('dota') ||
+      q.includes('league of legends') || q.includes('esport')) return '🎮';
+  if (q.includes('formula') || q.includes('motogp') || q.includes('grand prix') || q.includes('f1')) return '🏎️';
+  if (q.includes('ipl') || q.includes('cricket') || q.includes('rcb') || q.includes('csk')) return '🏏';
+  // Football par défaut si on a des clubs connus
+  return '⚽';
+}
+
+function makeCard(m) {
+  const sc   = m.spread <= 0.5 ? '#3fb950' : m.spread <= 1 ? '#d29922' : '#f85149';
+  const tc   = m.is_live
+    ? (m.minutes_left < 60 ? '#f85149' : '#ff6b35')
+    : (m.minutes_left < 360 ? '#d29922' : '#58a6ff');
+  const icon = sportIcon(m.question);
+  const badge = m.is_live
+    ? `<span style="background:#3d0000;color:#f85149;border-radius:4px;padding:1px 6px;font-size:9px;font-weight:700">🔴 LIVE</span>`
+    : '';
+  return `
+  <div class="card-50" onclick="window.open('${m.url}','_blank')">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:15px">${icon}</span>
+        ${badge}
+        <span style="color:${tc};font-weight:700;font-size:12px">⏱ ${m.time_left}</span>
+      </span>
+      <span style="color:#8b949e;font-size:10px">${fmt_vol(m.volume_24h)}</span>
+    </div>
+    <div class="card-50-question">
+      ${m.question.substring(0,65)}${m.question.length>65?'...':''}
+    </div>
+    <div class="card-50-prices">
+      <span style="color:#3fb950">${m.bid}¢</span>
+      <span style="color:#8b949e;font-size:10px">bid</span>
+      <span style="color:#8b949e">·</span>
+      <span style="color:#58a6ff">${m.ask}¢</span>
+      <span style="color:#8b949e;font-size:10px">ask</span>
+      <span style="color:${sc};font-size:11px;margin-left:4px">${m.spread}¢ spread</span>
+    </div>
+    <div class="card-50-meta" style="margin-top:6px">
+      <span style="color:#c9d1d9">${m.shares} shares · +$${m.profit}</span>
+      <span style="color:#8b949e">${m.end_date}</span>
+    </div>
+  </div>`;
+}
+
+function sectionHtml(title, markets, emptyMsg) {
+  if (!markets.length) return '';
+  return `
+    <div class="section-title">${title} <span style="color:#58a6ff;font-size:10px;margin-left:6px">${markets.length}</span></div>
+    <div class="cards-grid" style="margin-bottom:24px">${markets.map(makeCard).join('')}</div>`;
+}
+
 function applyFilters() {
   const container = document.getElementById('sport-container');
-  const filtered = _sportData.filter(sportMatchesFilter);
+  const filtered  = _sportData.filter(sportMatchesFilter);
+  const live      = filtered.filter(m => m.is_live);
+  const upcoming  = filtered.filter(m => !m.is_live);
   document.getElementById('sport-count').textContent = `${filtered.length} matchs`;
 
-  if (filtered.length === 0) {
+  if (!filtered.length) {
     container.innerHTML = '<div class="no-50-msg">Aucun match avec ces filtres.</div>';
     return;
   }
-
-  const cards = filtered.map(m => {
-    const spread_color   = m.spread <= 0.5 ? '#3fb950' : m.spread <= 1 ? '#d29922' : '#f85149';
-    const urgency_color  = m.minutes_left < 60 ? '#f85149' : m.minutes_left < 180 ? '#d29922' : '#58a6ff';
-    return `
-    <div class="card-50" onclick="window.open('${m.url}','_blank')">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <span style="color:${urgency_color};font-weight:700;font-size:12px">⏱ ${m.time_left}</span>
-        <span style="color:#8b949e;font-size:10px">${fmt_vol(m.volume_24h)}</span>
-      </div>
-      <div class="card-50-question">
-        ${m.question.substring(0,65)}${m.question.length>65?'...':''}
-      </div>
-      <div class="card-50-prices">
-        <span style="color:#3fb950">${m.bid}¢</span>
-        <span style="color:#8b949e;font-size:10px">bid</span>
-        <span style="color:#8b949e">·</span>
-        <span style="color:#58a6ff">${m.ask}¢</span>
-        <span style="color:#8b949e;font-size:10px">ask</span>
-        <span style="color:${spread_color};font-size:11px;margin-left:4px">${m.spread}¢ spread</span>
-      </div>
-      <div class="card-50-meta" style="margin-top:6px">
-        <span style="color:#c9d1d9">${m.shares} shares · +$${m.profit}</span>
-        <span style="color:#8b949e">${m.end_date}</span>
-      </div>
-    </div>`;
-  }).join('');
-  container.innerHTML = `<div class="cards-grid">${cards}</div>`;
+  container.innerHTML =
+    sectionHtml('🔴 En cours / se termine bientôt', live) +
+    sectionHtml('⏰ À venir aujourd\'hui', upcoming);
 }
 
 function renderSport(markets) {
   _sportData = markets || [];
   if (!_sportData.length) {
     document.getElementById('sport-container').innerHTML = `
-      <div class="no-50-msg">
-        Aucun match dans les 12 prochaines heures.<br>
-        Les matchs IPL, NBA, UFC... apparaissent ici automatiquement le jour J.
-      </div>`;
+      <div class="no-50-msg">Aucun match dans les 24 prochaines heures.<br>
+      Les matchs IPL, NBA, UFC... apparaissent ici automatiquement le jour J.</div>`;
     document.getElementById('sport-count').textContent = '0 matchs';
     return;
   }

@@ -715,7 +715,7 @@ def run_scanner_sport_du_jour(raw_markets: list = None) -> list:
         raw_markets = fetch_top_markets(limit=SPORT_FETCH_LIMIT)
 
     now     = datetime.now(timezone.utc)
-    cutoff  = now + timedelta(hours=12)
+    cutoff  = now + timedelta(hours=24)
 
     candidates = []
     for m in raw_markets:
@@ -758,6 +758,7 @@ def run_scanner_sport_du_jour(raw_markets: list = None) -> list:
         minutes_left = int((end_dt - now).total_seconds() / 60)
         h, mn = divmod(minutes_left, 60)
         time_left = f"{h}h{mn:02d}" if h > 0 else f"{mn}min"
+        is_live = minutes_left < 180  # < 3h = probablement en cours
 
         events     = m.get("events", [])
         event_slug = events[0].get("slug", "") if events else ""
@@ -773,6 +774,7 @@ def run_scanner_sport_du_jour(raw_markets: list = None) -> list:
             "end_date":     end[:10],
             "minutes_left": minutes_left,
             "time_left":    time_left,
+            "is_live":      is_live,
             "url":          f"https://polymarket.com/event/{url_slug}",
         })
 
