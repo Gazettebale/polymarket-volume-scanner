@@ -32,7 +32,7 @@ def background_scan():
             raw = fetch_top_markets(limit=FETCH_LIMIT)
 
             markets       = run_scanner(top_n=20, verbose=False)
-            sport_du_jour = run_scanner_sport_du_jour(raw_markets=raw)
+            sport_du_jour = run_scanner_sport_du_jour()  # fetch étendu 700 pour UFC etc.
             whales        = run_whale_tracker_api()
 
             with _lock:

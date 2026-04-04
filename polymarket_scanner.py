@@ -698,12 +698,13 @@ def run_scanner(top_n: int = 15, verbose: bool = True) -> list:
 
 SPORT_KEYWORDS = [
     " vs ", " vs.", "vs. ", "match", " win on ", "beats ",
-    "nba", "ipl", "nfl", "mlb", "nhl", "ufc", "mma",
+    "nba", "ipl", "nfl", "mlb", "nhl", "ufc", "mma", "fight night",
     "premier league", "champions league", "ligue 1", "bundesliga",
     "serie a", "la liga", "eredivisie", "ligue des champions",
     "cricket", "tennis", "open", "masters", "wimbledon", "roland garros",
     "formula 1", "motogp", "grand prix",
 ]
+SPORT_FETCH_LIMIT = 700  # UFC etc. peuvent être hors top 300
 
 def run_scanner_sport_du_jour(raw_markets: list = None) -> list:
     """
@@ -711,7 +712,7 @@ def run_scanner_sport_du_jour(raw_markets: list = None) -> list:
     Triés par temps restant (plus urgent en premier).
     """
     if raw_markets is None:
-        raw_markets = fetch_top_markets(limit=FETCH_LIMIT)
+        raw_markets = fetch_top_markets(limit=SPORT_FETCH_LIMIT)
 
     now     = datetime.now(timezone.utc)
     cutoff  = now + timedelta(hours=12)
@@ -777,9 +778,9 @@ def run_scanner_sport_du_jour(raw_markets: list = None) -> list:
 
     candidates.sort(key=lambda x: x["minutes_left"])
 
-    # Enrichir avec le vrai orderbook pour les 20 premiers
+    # Enrichir avec le vrai orderbook pour tous les candidats
     results = []
-    for c in candidates[:20]:
+    for c in candidates:
         ob = fetch_orderbook(c["token_id_yes"])
         if not ob:
             continue
