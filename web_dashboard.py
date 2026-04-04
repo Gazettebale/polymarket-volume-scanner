@@ -11,13 +11,15 @@ import threading
 from datetime import datetime
 from flask import Flask, jsonify, render_template_string
 
-from config import WATCH_INTERVAL_SECONDS
-from polymarket_scanner import run_scanner, MarketOpportunity
+from config import WATCH_INTERVAL_SECONDS, FETCH_LIMIT
+from polymarket_scanner import (
+    run_scanner, run_scanner_50_50, fetch_top_markets, MarketOpportunity
+)
 
 app = Flask(__name__)
 
 # Cache global — mis à jour en background toutes les 60s
-_cache = {"markets": [], "last_update": None, "loading": True}
+_cache = {"markets": [], "markets_50_50": [], "last_update": None, "loading": True}
 _lock  = threading.Lock()
 
 
@@ -25,11 +27,17 @@ _lock  = threading.Lock()
 def background_scan():
     while True:
         try:
-            markets = run_scanner(top_n=20, verbose=False)
+            # Un seul fetch pour les deux scanners
+            raw = fetch_top_markets(limit=FETCH_LIMIT)
+
+            markets      = run_scanner(top_n=20, verbose=False)
+            markets_5050 = run_scanner_50_50(raw_markets=raw)
+
             with _lock:
-                _cache["markets"]     = [_serialize(m) for m in markets]
-                _cache["last_update"] = datetime.now().strftime("%H:%M:%S")
-                _cache["loading"]     = False
+                _cache["markets"]       = [_serialize(m) for m in markets]
+                _cache["markets_50_50"] = markets_5050
+                _cache["last_update"]   = datetime.now().strftime("%H:%M:%S")
+                _cache["loading"]       = False
         except Exception as e:
             print(f"[scanner] erreur: {e}")
         time.sleep(WATCH_INTERVAL_SECONDS)
@@ -68,6 +76,11 @@ def _serialize(m: MarketOpportunity) -> dict:
 def api_markets():
     with _lock:
         return jsonify(_cache)
+
+@app.route("/api/markets/50-50")
+def api_50_50():
+    with _lock:
+        return jsonify({"markets": _cache["markets_50_50"], "last_update": _cache["last_update"]})
 
 
 # ─── HTML Dashboard ───────────────────────────────────────────────────────────
@@ -294,6 +307,119 @@ HTML = """<!DOCTYPE html>
   .tag-nba  { background: #2d1a3a; color: #bc8cff; }
   .tag-pol  { background: #1f2d1f; color: #56d364; }
   .tag-wc   { background: #1a2d3a; color: #79c0ff; }
+
+  /* ── 50/50 section ── */
+  .section-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #8b949e;
+    margin: 28px 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #21262d;
+  }
+
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+
+  .card-50 {
+    background: #0d1117;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    position: relative;
+    overflow: hidden;
+  }
+  .card-50:hover { border-color: #388bfd; background: #161b22; }
+
+  .card-50.status-today  { border-color: #f85149; }
+  .card-50.status-soon   { border-color: #d29922; }
+  .card-50.status-upcoming { border-color: #21262d; }
+
+  .card-50-bar {
+    height: 3px;
+    border-radius: 2px;
+    margin-bottom: 10px;
+    background: linear-gradient(to right, #1f6feb 0%, #3fb950 50%, #f85149 100%);
+    position: relative;
+  }
+  .card-50-marker {
+    position: absolute;
+    top: -3px;
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid #0d1117;
+    transform: translateX(-50%);
+  }
+
+  .card-50-question {
+    font-size: 11px;
+    color: #c9d1d9;
+    line-height: 1.4;
+    margin-bottom: 8px;
+    font-weight: 500;
+  }
+
+  .card-50-prices {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+
+  .card-50-meta {
+    font-size: 10px;
+    color: #8b949e;
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+  }
+
+  .status-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .status-badge.today    { background: #3d1515; color: #f85149; }
+  .status-badge.soon     { background: #2d2200; color: #d29922; }
+  .status-badge.upcoming { background: #1a2d3a; color: #58a6ff; }
+
+  .dist-badge {
+    font-size: 10px;
+    color: #3fb950;
+    font-weight: 700;
+  }
+
+  .no-50-msg {
+    color: #8b949e;
+    font-size: 12px;
+    padding: 20px;
+    background: #0d1117;
+    border: 1px dashed #21262d;
+    border-radius: 8px;
+    text-align: center;
+    margin-bottom: 28px;
+  }
 </style>
 </head>
 <body>
@@ -314,6 +440,11 @@ HTML = """<!DOCTYPE html>
     Scan en cours — analyse des orderbooks...
   </div>
   <div id="best-pick-container"></div>
+
+  <div class="section-title">🏓 Marchés 50/50 — Ping Pong</div>
+  <div id="cards-50-container"></div>
+
+  <div class="section-title">📊 Top marchés — Volume &amp; Spread</div>
   <div id="table-container"></div>
 </main>
 
@@ -434,17 +565,6 @@ function render(data) {
     </table>`;
 }
 
-async function fetchData() {
-  try {
-    const r = await fetch('/api/markets');
-    const data = await r.json();
-    if (!data.loading) render(data);
-    else document.getElementById('last-update').textContent = 'Scan en cours...';
-  } catch(e) {
-    document.getElementById('last-update').textContent = 'Erreur réseau';
-  }
-}
-
 function startCountdown() {
   clearInterval(timer);
   countdown = 60;
@@ -456,6 +576,74 @@ function startCountdown() {
       fetchData();
     }
   }, 1000);
+}
+
+function render50_50(markets) {
+  const container = document.getElementById('cards-50-container');
+
+  if (!markets || markets.length === 0) {
+    container.innerHTML = `
+      <div class="no-50-msg">
+        Aucun marché 50/50 en ce moment — les matchs sportifs (IPL, NBA) apparaissent ici le matin du jour J.<br>
+        <b>Prochain créneau :</b> RCB vs CSK demain ~16h Paris
+      </div>`;
+    return;
+  }
+
+  const cards = markets.map(m => {
+    const pct   = ((m.bid / 100) * 100).toFixed(0);  // position sur la barre 0-100%
+    const sclass = `status-${m.status}`;
+    const sbadge = m.status === 'today'
+      ? `<span class="status-badge today">⚠ Aujourd'hui</span>`
+      : m.status === 'soon'
+      ? `<span class="status-badge soon">Bientôt</span>`
+      : `<span class="status-badge upcoming">Upcoming</span>`;
+
+    const spread_color = m.spread <= 0.2 ? '#3fb950' : m.spread <= 0.5 ? '#d29922' : '#f85149';
+
+    return `
+    <div class="card-50 ${sclass}" onclick="window.open('${m.url}','_blank')">
+      <div class="card-50-bar">
+        <div class="card-50-marker" style="left:${pct}%"></div>
+      </div>
+      <div class="card-50-question">
+        ${m.question.substring(0,65)}${m.question.length>65?'...':''}
+      </div>
+      <div class="card-50-prices">
+        <span style="color:#3fb950">${m.bid}¢</span>
+        <span style="color:#8b949e;font-size:10px">bid</span>
+        <span style="color:#8b949e">·</span>
+        <span style="color:#58a6ff">${m.ask}¢</span>
+        <span style="color:#8b949e;font-size:10px">ask</span>
+        <span style="color:${spread_color};font-size:11px;margin-left:4px">${m.spread}¢</span>
+      </div>
+      <div class="card-50-meta">
+        <span>${sbadge} ${m.end_date}</span>
+        <span class="dist-badge">${m.dist_50}¢ du 50¢</span>
+      </div>
+      <div class="card-50-meta" style="margin-top:4px">
+        <span style="color:#c9d1d9">${fmt_vol(m.volume_24h)} · ${m.shares} shares</span>
+        <span style="color:#3fb950">+$${m.profit}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = `<div class="cards-grid">${cards}</div>`;
+}
+
+async function fetchData() {
+  try {
+    const r = await fetch('/api/markets');
+    const data = await r.json();
+    if (!data.loading) {
+      render(data);
+      render50_50(data.markets_50_50);
+    } else {
+      document.getElementById('last-update').textContent = 'Scan en cours...';
+    }
+  } catch(e) {
+    document.getElementById('last-update').textContent = 'Erreur réseau';
+  }
 }
 
 // Init

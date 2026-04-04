@@ -86,25 +86,45 @@ class MarketOpportunity:
 
 
 # ─── API calls ───────────────────────────────────────────────────────────────
-def fetch_top_markets(limit: int = 100) -> list:
-    """Récupère les marchés avec le plus de volume 24h."""
-    try:
-        r = requests.get(
-            f"{GAMMA_API}/markets",
-            params={
-                "active": "true",
-                "closed": "false",
-                "limit": limit,
-                "order": "volume24hr",
-                "ascending": "false",
-            },
-            timeout=TIMEOUT,
-        )
-        r.raise_for_status()
-        return r.json()
-    except Exception as e:
-        print(f"{RE}[ERROR] fetch_top_markets: {e}{R}")
-        return []
+def fetch_top_markets(limit: int = 300) -> list:
+    """
+    Récupère les marchés avec le plus de volume 24h.
+    Pagine automatiquement si limit > 300 (max API par appel).
+    """
+    all_markets = []
+    page_size   = 300
+    offset      = 0
+    remaining   = limit
+
+    while remaining > 0:
+        batch = min(page_size, remaining)
+        try:
+            r = requests.get(
+                f"{GAMMA_API}/markets",
+                params={
+                    "active":    "true",
+                    "closed":    "false",
+                    "limit":     batch,
+                    "offset":    offset,
+                    "order":     "volume24hr",
+                    "ascending": "false",
+                },
+                timeout=TIMEOUT,
+            )
+            r.raise_for_status()
+            data = r.json()
+            if not data:
+                break
+            all_markets.extend(data)
+            if len(data) < batch:   # dernière page
+                break
+            offset    += batch
+            remaining -= batch
+        except Exception as e:
+            print(f"{RE}[ERROR] fetch_top_markets page {offset}: {e}{R}")
+            break
+
+    return all_markets
 
 
 def fetch_orderbook(token_id: str) -> Optional[dict]:
@@ -576,6 +596,100 @@ def run_scanner(top_n: int = 15, verbose: bool = True) -> list:
     # Tri par score
     analyzed.sort(key=lambda x: x.score, reverse=True)
     return analyzed[:top_n]
+
+
+def run_scanner_50_50(raw_markets: list = None) -> list:
+    """
+    Trouve les marchés proches de 50/50 (prix entre 35¢ et 65¢).
+    Idéal pour le ping pong bid/ask.
+    Réutilise les marchés déjà fetchés si fournis.
+    """
+    if raw_markets is None:
+        raw_markets = fetch_top_markets(limit=FETCH_LIMIT)
+
+    candidates = []
+    for m in raw_markets:
+        q            = m.get("question", "")
+        end          = m.get("endDate", "") or m.get("end_date", "")
+        outcome_p    = m.get("outcomePrices", [])
+        vol          = float(m.get("volume24hr") or 0)
+        tokens       = m.get("clobTokenIds") or []
+
+        if isinstance(tokens, str):
+            try: tokens = _json.loads(tokens)
+            except: continue
+        if isinstance(outcome_p, str):
+            try: outcome_p = _json.loads(outcome_p)
+            except: continue
+
+        if is_on_avoid_list(q): continue
+        if not tokens or len(tokens) < 2: continue
+        if vol < 10_000: continue   # seuil bas exprès pour 50/50
+
+        try:
+            yes_price = float(outcome_p[0]) if outcome_p else 0.5
+        except:
+            continue
+
+        # Zone 50/50 : 35¢–65¢
+        if yes_price < 0.35 or yes_price > 0.65:
+            continue
+
+        token_id_yes = str(tokens[0])
+        token_id_no  = str(tokens[1])
+
+        # Calcul distance au 50¢
+        dist = abs(yes_price - 0.50)
+
+        # Status temporel
+        today_str    = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        end_str      = end[:10]
+        if end_str < today_str:
+            status = "expired"
+        elif end_str == today_str:
+            status = "today"       # risqué
+        elif end_str <= (datetime.now(timezone.utc).strftime("%Y-%m-") + "08"):
+            status = "soon"        # dans les 4 prochains jours
+        else:
+            status = "upcoming"
+
+        candidates.append({
+            "question":    q,
+            "slug":        m.get("slug", ""),
+            "token_id_yes": token_id_yes,
+            "token_id_no":  token_id_no,
+            "yes_price":   yes_price,
+            "volume_24h":  vol,
+            "end_date":    end_str,
+            "status":      status,
+            "dist_50":     round(dist * 100, 1),  # distance en cents
+        })
+
+    # Trier par distance au 50¢ (plus proche = premier)
+    candidates.sort(key=lambda x: (x["status"] == "expired", x["dist_50"]))
+
+    # Enrichir avec le vrai orderbook pour les 15 meilleurs
+    results = []
+    for c in candidates[:15]:
+        ob = fetch_orderbook(c["token_id_yes"])
+        if not ob:
+            continue
+        bid, ask = ob["bid"], ob["ask"]
+        if bid < 0.30 or bid > 0.70:
+            continue
+
+        shares = int(200 / bid) if bid > 0 else 0
+        c["bid"]       = round(bid * 100, 1)
+        c["ask"]       = round(ask * 100, 1)
+        c["spread"]    = round(ob["spread_cents"], 2)
+        c["bid_depth"] = round(ob["bid_depth"])
+        c["ask_depth"] = round(ob["ask_depth"])
+        c["shares"]    = shares
+        c["profit"]    = round((ask - bid) * shares, 2)
+        c["url"]       = f"https://polymarket.com/event/{c['slug']}"
+        results.append(c)
+
+    return results
 
 
 def main():
