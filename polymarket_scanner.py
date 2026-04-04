@@ -19,7 +19,7 @@ import json
 import argparse
 import requests
 import json as _json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -696,22 +696,33 @@ def run_scanner(top_n: int = 15, verbose: bool = True) -> list:
     return analyzed[:top_n]
 
 
-def run_scanner_50_50(raw_markets: list = None) -> list:
+SPORT_KEYWORDS = [
+    " vs ", " vs.", "vs. ", "match", " win on ", "beats ",
+    "nba", "ipl", "nfl", "mlb", "nhl", "ufc", "mma",
+    "premier league", "champions league", "ligue 1", "bundesliga",
+    "serie a", "la liga", "eredivisie", "ligue des champions",
+    "cricket", "tennis", "open", "masters", "wimbledon", "roland garros",
+    "formula 1", "motogp", "grand prix",
+]
+
+def run_scanner_sport_du_jour(raw_markets: list = None) -> list:
     """
-    Trouve les marchés proches de 50/50 (prix entre 35¢ et 65¢).
-    Idéal pour le ping pong bid/ask.
-    Réutilise les marchés déjà fetchés si fournis.
+    Trouve les matchs sportifs se terminant dans les 12 prochaines heures.
+    Triés par temps restant (plus urgent en premier).
     """
     if raw_markets is None:
         raw_markets = fetch_top_markets(limit=FETCH_LIMIT)
 
+    now     = datetime.now(timezone.utc)
+    cutoff  = now + timedelta(hours=12)
+
     candidates = []
     for m in raw_markets:
-        q            = m.get("question", "")
-        end          = m.get("endDate", "") or m.get("end_date", "")
-        outcome_p    = m.get("outcomePrices", [])
-        vol          = float(m.get("volume24hr") or 0)
-        tokens       = m.get("clobTokenIds") or []
+        q         = m.get("question", "")
+        end       = m.get("endDate", "") or m.get("end_date", "")
+        outcome_p = m.get("outcomePrices", [])
+        vol       = float(m.get("volume24hr") or 0)
+        tokens    = m.get("clobTokenIds") or []
 
         if isinstance(tokens, str):
             try: tokens = _json.loads(tokens)
@@ -720,62 +731,59 @@ def run_scanner_50_50(raw_markets: list = None) -> list:
             try: outcome_p = _json.loads(outcome_p)
             except: continue
 
-        if is_on_avoid_list(q): continue
         if not tokens or len(tokens) < 2: continue
-        if vol < 10_000: continue   # seuil bas exprès pour 50/50
+        if vol < 5_000: continue
+
+        # Filtre sport
+        q_lower = q.lower()
+        if not any(kw in q_lower for kw in SPORT_KEYWORDS):
+            continue
+
+        # Parse timestamp complet
+        try:
+            end_dt = datetime.fromisoformat(end.replace("Z", "+00:00"))
+        except:
+            continue
+
+        # Seulement les matchs dans les 12 prochaines heures
+        if end_dt <= now or end_dt > cutoff:
+            continue
 
         try:
             yes_price = float(outcome_p[0]) if outcome_p else 0.5
         except:
             continue
 
-        # Zone 50/50 : 35¢–65¢
-        if yes_price < 0.35 or yes_price > 0.65:
-            continue
+        minutes_left = int((end_dt - now).total_seconds() / 60)
+        h, mn = divmod(minutes_left, 60)
+        time_left = f"{h}h{mn:02d}" if h > 0 else f"{mn}min"
 
-        token_id_yes = str(tokens[0])
-        token_id_no  = str(tokens[1])
-
-        # Calcul distance au 50¢
-        dist = abs(yes_price - 0.50)
-
-        # Status temporel
-        today_str    = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        end_str      = end[:10]
-        if end_str < today_str:
-            status = "expired"
-        elif end_str == today_str:
-            status = "today"       # risqué
-        elif end_str <= (datetime.now(timezone.utc).strftime("%Y-%m-") + "08"):
-            status = "soon"        # dans les 4 prochains jours
-        else:
-            status = "upcoming"
+        events     = m.get("events", [])
+        event_slug = events[0].get("slug", "") if events else ""
+        url_slug   = event_slug or m.get("slug", "")
 
         candidates.append({
-            "question":    q,
-            "slug":        m.get("slug", ""),
-            "token_id_yes": token_id_yes,
-            "token_id_no":  token_id_no,
-            "yes_price":   yes_price,
-            "volume_24h":  vol,
-            "end_date":    end_str,
-            "status":      status,
-            "dist_50":     round(dist * 100, 1),  # distance en cents
+            "question":     q,
+            "slug":         url_slug,
+            "token_id_yes": str(tokens[0]),
+            "token_id_no":  str(tokens[1]),
+            "yes_price":    yes_price,
+            "volume_24h":   vol,
+            "end_date":     end[:10],
+            "minutes_left": minutes_left,
+            "time_left":    time_left,
+            "url":          f"https://polymarket.com/event/{url_slug}",
         })
 
-    # Trier par distance au 50¢ (plus proche = premier)
-    candidates.sort(key=lambda x: (x["status"] == "expired", x["dist_50"]))
+    candidates.sort(key=lambda x: x["minutes_left"])
 
-    # Enrichir avec le vrai orderbook pour les 15 meilleurs
+    # Enrichir avec le vrai orderbook pour les 20 premiers
     results = []
-    for c in candidates[:15]:
+    for c in candidates[:20]:
         ob = fetch_orderbook(c["token_id_yes"])
         if not ob:
             continue
         bid, ask = ob["bid"], ob["ask"]
-        if bid < 0.30 or bid > 0.70:
-            continue
-
         shares = int(200 / bid) if bid > 0 else 0
         c["bid"]       = round(bid * 100, 1)
         c["ask"]       = round(ask * 100, 1)
@@ -784,7 +792,6 @@ def run_scanner_50_50(raw_markets: list = None) -> list:
         c["ask_depth"] = round(ob["ask_depth"])
         c["shares"]    = shares
         c["profit"]    = round((ask - bid) * shares, 2)
-        c["url"]       = f"https://polymarket.com/event/{c['slug']}"
         results.append(c)
 
     return results

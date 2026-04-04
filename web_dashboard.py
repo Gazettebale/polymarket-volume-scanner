@@ -13,14 +13,14 @@ from flask import Flask, jsonify, render_template_string
 
 from config import WATCH_INTERVAL_SECONDS, FETCH_LIMIT
 from polymarket_scanner import (
-    run_scanner, run_scanner_50_50, fetch_top_markets, MarketOpportunity,
+    run_scanner, run_scanner_sport_du_jour, fetch_top_markets, MarketOpportunity,
     run_whale_tracker_api,
 )
 
 app = Flask(__name__)
 
 # Cache global — mis à jour en background toutes les 60s
-_cache = {"markets": [], "markets_50_50": [], "whales": [], "last_update": None, "loading": True}
+_cache = {"markets": [], "sport_du_jour": [], "whales": [], "last_update": None, "loading": True}
 _lock  = threading.Lock()
 
 
@@ -31,13 +31,13 @@ def background_scan():
             # Un seul fetch pour les deux scanners
             raw = fetch_top_markets(limit=FETCH_LIMIT)
 
-            markets      = run_scanner(top_n=20, verbose=False)
-            markets_5050 = run_scanner_50_50(raw_markets=raw)
-            whales       = run_whale_tracker_api()
+            markets       = run_scanner(top_n=20, verbose=False)
+            sport_du_jour = run_scanner_sport_du_jour(raw_markets=raw)
+            whales        = run_whale_tracker_api()
 
             with _lock:
                 _cache["markets"]       = [_serialize(m) for m in markets]
-                _cache["markets_50_50"] = markets_5050
+                _cache["sport_du_jour"] = sport_du_jour
                 _cache["whales"]        = whales
                 _cache["last_update"]   = datetime.now().strftime("%H:%M:%S")
                 _cache["loading"]       = False
@@ -80,10 +80,10 @@ def api_markets():
     with _lock:
         return jsonify(_cache)
 
-@app.route("/api/markets/50-50")
-def api_50_50():
+@app.route("/api/markets/sport")
+def api_sport():
     with _lock:
-        return jsonify({"markets": _cache["markets_50_50"], "last_update": _cache["last_update"]})
+        return jsonify({"markets": _cache["sport_du_jour"], "last_update": _cache["last_update"]})
 
 
 # ─── HTML Dashboard ───────────────────────────────────────────────────────────
@@ -526,15 +526,15 @@ HTML = """<!DOCTYPE html>
 
   <nav class="tabs">
     <button class="tab active" data-tab="volume">📊 Top Marchés</button>
-    <button class="tab" data-tab="pingpong">🏓 Ping Pong</button>
+    <button class="tab" data-tab="sport">⚽ Sport du Jour</button>
     <button class="tab" data-tab="whales">🐋 Whale Tracker</button>
   </nav>
 
   <div id="tab-volume" class="tab-panel active">
     <div id="table-container"></div>
   </div>
-  <div id="tab-pingpong" class="tab-panel">
-    <div id="cards-50-container"></div>
+  <div id="tab-sport" class="tab-panel">
+    <div id="sport-container"></div>
   </div>
   <div id="tab-whales" class="tab-panel">
     <div id="whale-container"></div>
@@ -678,33 +678,27 @@ function startCountdown() {
   }, 1000);
 }
 
-function render50_50(markets) {
-  const container = document.getElementById('cards-50-container');
+function renderSport(markets) {
+  const container = document.getElementById('sport-container');
 
   if (!markets || markets.length === 0) {
     container.innerHTML = `
       <div class="no-50-msg">
-        Aucun marché 50/50 en ce moment — les matchs sportifs (IPL, NBA) apparaissent ici le matin du jour J.<br>
-        <b>Prochain créneau :</b> RCB vs CSK demain ~16h Paris
+        Aucun match dans les 12 prochaines heures.<br>
+        Les matchs IPL, NBA, MLB... apparaissent ici automatiquement le jour J.
       </div>`;
     return;
   }
 
   const cards = markets.map(m => {
-    const pct   = ((m.bid / 100) * 100).toFixed(0);  // position sur la barre 0-100%
-    const sclass = `status-${m.status}`;
-    const sbadge = m.status === 'today'
-      ? `<span class="status-badge today">⚠ Aujourd'hui</span>`
-      : m.status === 'soon'
-      ? `<span class="status-badge soon">Bientôt</span>`
-      : `<span class="status-badge upcoming">Upcoming</span>`;
-
     const spread_color = m.spread <= 0.2 ? '#3fb950' : m.spread <= 0.5 ? '#d29922' : '#f85149';
+    const urgency_color = m.minutes_left < 60 ? '#f85149' : m.minutes_left < 180 ? '#d29922' : '#58a6ff';
 
     return `
-    <div class="card-50 ${sclass}" onclick="window.open('${m.url}','_blank')">
-      <div class="card-50-bar">
-        <div class="card-50-marker" style="left:${pct}%"></div>
+    <div class="card-50" onclick="window.open('${m.url}','_blank')">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="color:${urgency_color};font-weight:700;font-size:12px">⏱ ${m.time_left}</span>
+        <span style="color:#8b949e;font-size:10px">${fmt_vol(m.volume_24h)}</span>
       </div>
       <div class="card-50-question">
         ${m.question.substring(0,65)}${m.question.length>65?'...':''}
@@ -715,15 +709,11 @@ function render50_50(markets) {
         <span style="color:#8b949e">·</span>
         <span style="color:#58a6ff">${m.ask}¢</span>
         <span style="color:#8b949e;font-size:10px">ask</span>
-        <span style="color:${spread_color};font-size:11px;margin-left:4px">${m.spread}¢</span>
+        <span style="color:${spread_color};font-size:11px;margin-left:4px">${m.spread}¢ spread</span>
       </div>
-      <div class="card-50-meta">
-        <span>${sbadge} ${m.end_date}</span>
-        <span class="dist-badge">${m.dist_50}¢ du 50¢</span>
-      </div>
-      <div class="card-50-meta" style="margin-top:4px">
-        <span style="color:#c9d1d9">${fmt_vol(m.volume_24h)} · ${m.shares} shares</span>
-        <span style="color:#3fb950">+$${m.profit}</span>
+      <div class="card-50-meta" style="margin-top:6px">
+        <span style="color:#c9d1d9">${m.shares} shares · +$${m.profit}</span>
+        <span style="color:#8b949e">${m.end_date}</span>
       </div>
     </div>`;
   }).join('');
@@ -778,7 +768,7 @@ async function fetchData() {
     const data = await r.json();
     if (!data.loading) {
       render(data);
-      render50_50(data.markets_50_50);
+      renderSport(data.sport_du_jour);
       renderWhales(data.whales);
     } else {
       document.getElementById('last-update').textContent = 'Scan en cours...';
