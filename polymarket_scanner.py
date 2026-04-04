@@ -43,6 +43,7 @@ from config import (
     MAX_SPREAD_CENTS as MAX_SPREAD,
     TRADE_SIZE_USD,
     WATCH_INTERVAL_SECONDS,
+    FETCH_LIMIT,
     BOT_AVOID_KEYWORDS,
     WHALE_WALLETS,
     MY_WALLET,
@@ -465,7 +466,7 @@ def run_scanner(top_n: int = 15, verbose: bool = True) -> list:
     Retourne la liste triée des meilleures opportunités.
     """
     print(f"\n{CY}Fetching top marchés...{R}", end="", flush=True)
-    raw_markets = fetch_top_markets(limit=100)
+    raw_markets = fetch_top_markets(limit=FETCH_LIMIT)
     print(f" {G}{len(raw_markets)} marchés récupérés{R}")
 
     candidates = []

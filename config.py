@@ -1,10 +1,13 @@
 # ─── Polymarket Volume Scanner — Configuration ───────────────────────────────
 
 # Filtres marchés
-MIN_VOLUME_24H = 100_000   # $100k minimum
-MIN_PRICE      = 0.10      # 10¢ — en dessous trop extrême
-MAX_PRICE      = 0.90      # 90¢ — au-dessus trop extrême
-MAX_SPREAD_CENTS = 0.5     # 0.5¢ spread maximum
+MIN_VOLUME_24H   = 50_000   # $50k minimum (élargi pour plus de candidats)
+MIN_PRICE        = 0.08     # 8¢ minimum
+MAX_PRICE        = 0.92     # 92¢ maximum
+MAX_SPREAD_CENTS = 1.0      # 1¢ spread maximum (élargi)
+
+# Nombre de marchés à fetcher depuis l'API
+FETCH_LIMIT = 300           # 300 marchés scannés (vs 100 avant)
 
 # Capital par trade (pour calcul shares et profit)
 TRADE_SIZE_USD = 200
