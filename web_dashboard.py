@@ -921,17 +921,19 @@ async function fetchData() {
       render(data);
       renderSport(data.sport_du_jour);
       renderWhales(data.whales);
+      startCountdown();
     } else {
       document.getElementById('last-update').textContent = 'Scan en cours...';
+      setTimeout(fetchData, 3000);  // retry toutes les 3s tant que loading
     }
   } catch(e) {
     document.getElementById('last-update').textContent = 'Erreur réseau';
+    setTimeout(fetchData, 5000);
   }
 }
 
 // Init
-fetchData();
-startCountdown();
+fetchData();  // startCountdown() est appelé dans fetchData quand loading=false
 </script>
 </body>
 </html>"""
