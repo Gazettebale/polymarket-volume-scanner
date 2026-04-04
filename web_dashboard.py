@@ -26,24 +26,41 @@ _lock  = threading.Lock()
 
 # ─── Background scanner ───────────────────────────────────────────────────────
 def background_scan():
+    """Scan principal (Top Marchés) — rapide, ~30s."""
     while True:
         try:
-            # Un seul fetch pour les deux scanners
-            raw = fetch_top_markets(limit=FETCH_LIMIT)
-
-            markets       = run_scanner(top_n=20, verbose=False)
-            sport_du_jour = run_scanner_sport_du_jour()  # fetch étendu 700 pour UFC etc.
-            whales        = run_whale_tracker_api()
-
+            markets = run_scanner(top_n=20, verbose=False)
             with _lock:
-                _cache["markets"]       = [_serialize(m) for m in markets]
-                _cache["sport_du_jour"] = sport_du_jour
-                _cache["whales"]        = whales
-                _cache["last_update"]   = datetime.now().strftime("%H:%M:%S")
-                _cache["loading"]       = False
+                _cache["markets"]     = [_serialize(m) for m in markets]
+                _cache["last_update"] = datetime.now().strftime("%H:%M:%S")
+                _cache["loading"]     = False
         except Exception as e:
             print(f"[scanner] erreur: {e}")
         time.sleep(WATCH_INTERVAL_SECONDS)
+
+
+def background_scan_sport():
+    """Scan sport (1500 marchés) — indépendant, ~2-3 min."""
+    while True:
+        try:
+            sport = run_scanner_sport_du_jour()
+            with _lock:
+                _cache["sport_du_jour"] = sport
+        except Exception as e:
+            print(f"[sport] erreur: {e}")
+        time.sleep(WATCH_INTERVAL_SECONDS * 3)  # refresh toutes les 3 min
+
+
+def background_scan_whales():
+    """Scan whales — indépendant."""
+    while True:
+        try:
+            whales = run_whale_tracker_api()
+            with _lock:
+                _cache["whales"] = whales
+        except Exception as e:
+            print(f"[whales] erreur: {e}")
+        time.sleep(WATCH_INTERVAL_SECONDS * 2)
 
 
 def _serialize(m: MarketOpportunity) -> dict:
@@ -927,8 +944,9 @@ def index():
 
 if __name__ == "__main__":
     # Lance le scanner en background
-    t = threading.Thread(target=background_scan, daemon=True)
-    t.start()
+    threading.Thread(target=background_scan,        daemon=True).start()
+    threading.Thread(target=background_scan_sport,  daemon=True).start()
+    threading.Thread(target=background_scan_whales, daemon=True).start()
 
     print("\n  Polymarket Dashboard → http://localhost:8080")
     print("  Ctrl+C pour arrêter\n")
