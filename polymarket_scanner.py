@@ -46,6 +46,7 @@ from config import (
     FETCH_LIMIT,
     BOT_AVOID_KEYWORDS,
     WHALE_WALLETS,
+    WHALE_DATABASE,
     MY_WALLET,
     API_TIMEOUT as TIMEOUT,
 )
@@ -436,47 +437,139 @@ def print_summary_table(opportunities: list):
 
 
 # ─── Whale Tracker ───────────────────────────────────────────────────────────
+TIER_COLORS = {
+    "LEGENDARY": MA + B,
+    "ELITE":     Y  + B,
+    "TOP":       G  + B,
+    "HIGH":      CY + B,
+    "SOLID":     "\033[94m" + B,  # Blue
+    "VOLUME":    DG,
+}
+TIER_ICONS = {
+    "LEGENDARY": "👑",
+    "ELITE":     "🏆",
+    "TOP":       "🥇",
+    "HIGH":      "🥈",
+    "SOLID":     "🥉",
+    "VOLUME":    "📊",
+}
+
+
+def get_whale_activity(wallet: str, limit: int = 30) -> list:
+    """Récupère l'activité récente d'un wallet via data-api."""
+    try:
+        r = requests.get(
+            f"{DATA_API}/activity",
+            params={"user": wallet, "limit": limit},
+            timeout=TIMEOUT,
+        )
+        if r.status_code != 200:
+            return []
+        data = r.json()
+        if isinstance(data, list):
+            return data
+        return data.get("data", []) or data.get("activity", [])
+    except Exception:
+        return []
+
+
+def run_whale_tracker_api() -> list:
+    """
+    Retourne une liste de dicts pour le dashboard web :
+    [{name, tier, win_rate, rank, wallet, markets: [{question, side, price, count}]}]
+    """
+    results = []
+    for wallet, info in WHALE_DATABASE.items():
+        activity = get_whale_activity(wallet, limit=30)
+        market_agg = {}
+        for tx in activity:
+            question = (tx.get("title") or tx.get("market") or
+                        tx.get("question") or tx.get("conditionId", "?"))[:55]
+            side  = str(tx.get("side", "")).lower()
+            price = float(tx.get("price") or tx.get("usdcSize") or 0)
+            if question not in market_agg:
+                market_agg[question] = {"buys": 0, "sells": 0, "prices": []}
+            if "buy" in side:
+                market_agg[question]["buys"] += 1
+            else:
+                market_agg[question]["sells"] += 1
+            market_agg[question]["prices"].append(price)
+
+        top_markets = []
+        for q, d in list(market_agg.items())[:4]:
+            avg_p = sum(d["prices"]) / len(d["prices"]) if d["prices"] else 0
+            top_markets.append({
+                "question": q,
+                "buys":     d["buys"],
+                "sells":    d["sells"],
+                "avg_price": round(avg_p * 100, 1),
+            })
+
+        results.append({
+            "name":     info["name"],
+            "tier":     info["tier"],
+            "win_rate": info["win_rate"],
+            "rank":     info["rank"],
+            "wallet":   wallet,
+            "active":   len(market_agg) > 0,
+            "markets":  top_markets,
+        })
+
+    # Trier : actifs d'abord, puis par tier puis win_rate
+    tier_order = ["LEGENDARY", "ELITE", "TOP", "HIGH", "SOLID", "VOLUME"]
+    results.sort(key=lambda x: (
+        0 if x["active"] else 1,
+        tier_order.index(x["tier"]) if x["tier"] in tier_order else 99,
+        -x["win_rate"],
+    ))
+    return results
+
+
 def run_whale_tracker():
-    """Affiche l'activité récente des gros traders."""
+    """Affiche l'activité récente des gros traders (terminal)."""
     print(f"\n{MA}{B}{'═'*60}{R}")
-    print(f"{MA}{B}  WHALE TRACKER{R}")
+    print(f"{MA}{B}  WHALE TRACKER — {len(WHALE_DATABASE)} wallets surveillés{R}")
     print(f"{MA}{B}{'═'*60}{R}\n")
 
-    for name, wallet in WHALE_WALLETS.items():
-        if not wallet:
-            print(f"  {Y}{name}{R}: {DG}wallet non configuré — ajoute-le dans WHALE_WALLETS{R}")
-            continue
+    shown = 0
+    for wallet, info in WHALE_DATABASE.items():
+        tier   = info["tier"]
+        name   = info["name"]
+        wr     = info["win_rate"]
+        icon   = TIER_ICONS.get(tier, "•")
+        color  = TIER_COLORS.get(tier, "")
 
-        print(f"  {MA}{B}{name}{R} {DG}({wallet[:10]}...){R}")
-        activity = fetch_user_activity(wallet, limit=20)
-
+        activity = get_whale_activity(wallet, limit=20)
         if not activity:
-            print(f"    {DG}Aucune activité récente ou API indisponible{R}\n")
             continue
 
-        market_counts = {}
-        for tx in activity:
-            market = tx.get("title") or tx.get("market") or tx.get("question", "?")
-            side = tx.get("side", "?")
-            price = float(tx.get("price", 0))
-            key = market[:45]
-            if key not in market_counts:
-                market_counts[key] = {"buys": 0, "sells": 0, "prices": []}
-            if "buy" in str(side).lower():
-                market_counts[key]["buys"] += 1
-            else:
-                market_counts[key]["sells"] += 1
-            market_counts[key]["prices"].append(price)
+        shown += 1
+        print(f"  {icon} {color}{name}{R} {DG}({tier} • {wr}% WR){R}")
 
-        for market, data in list(market_counts.items())[:5]:
+        market_counts: dict = {}
+        for tx in activity:
+            q     = (tx.get("title") or tx.get("market") or
+                     tx.get("question") or "?")[:50]
+            side  = str(tx.get("side", "")).lower()
+            price = float(tx.get("price") or 0)
+            if q not in market_counts:
+                market_counts[q] = {"buys": 0, "sells": 0, "prices": []}
+            if "buy" in side:
+                market_counts[q]["buys"] += 1
+            else:
+                market_counts[q]["sells"] += 1
+            market_counts[q]["prices"].append(price)
+
+        for market, data in list(market_counts.items())[:3]:
             avg_p = sum(data["prices"]) / len(data["prices"]) if data["prices"] else 0
+            b_tag = f"{G}{data['buys']}B{R}" if data["buys"] else ""
+            s_tag = f"{RE}{data['sells']}S{R}" if data["sells"] else ""
             print(f"    {CY}{market}{R}")
-            print(f"    {G}buys:{data['buys']}{R} {RE}sells:{data['sells']}{R} "
-                  f"prix moyen: {fmt_price(avg_p)}")
+            print(f"    {b_tag} {s_tag}  moy {avg_p*100:.1f}¢")
         print()
 
-    print(f"  {DG}Astuce: pour trouver les wallets, va sur polymarket.com/@sovereign2013{R}")
-    print(f"  {DG}et regarde l'URL des transactions dans ton navigateur (Polygon){R}")
+    if shown == 0:
+        print(f"  {DG}Aucune activité récente détectée (API lente ou wallets inactifs){R}\n")
 
 
 # ─── Main Scanner ────────────────────────────────────────────────────────────

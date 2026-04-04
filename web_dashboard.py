@@ -13,13 +13,14 @@ from flask import Flask, jsonify, render_template_string
 
 from config import WATCH_INTERVAL_SECONDS, FETCH_LIMIT
 from polymarket_scanner import (
-    run_scanner, run_scanner_50_50, fetch_top_markets, MarketOpportunity
+    run_scanner, run_scanner_50_50, fetch_top_markets, MarketOpportunity,
+    run_whale_tracker_api,
 )
 
 app = Flask(__name__)
 
 # Cache global — mis à jour en background toutes les 60s
-_cache = {"markets": [], "markets_50_50": [], "last_update": None, "loading": True}
+_cache = {"markets": [], "markets_50_50": [], "whales": [], "last_update": None, "loading": True}
 _lock  = threading.Lock()
 
 
@@ -32,10 +33,12 @@ def background_scan():
 
             markets      = run_scanner(top_n=20, verbose=False)
             markets_5050 = run_scanner_50_50(raw_markets=raw)
+            whales       = run_whale_tracker_api()
 
             with _lock:
                 _cache["markets"]       = [_serialize(m) for m in markets]
                 _cache["markets_50_50"] = markets_5050
+                _cache["whales"]        = whales
                 _cache["last_update"]   = datetime.now().strftime("%H:%M:%S")
                 _cache["loading"]       = False
         except Exception as e:
@@ -420,6 +423,59 @@ HTML = """<!DOCTYPE html>
     text-align: center;
     margin-bottom: 28px;
   }
+
+  /* ── Whale Tracker ── */
+  .whale-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+  .whale-card {
+    background: #0d1117;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 12px 14px;
+    transition: border-color 0.15s;
+  }
+  .whale-card:hover { border-color: #388bfd; }
+  .whale-card.inactive { opacity: 0.45; }
+  .whale-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .whale-name { font-weight: 700; font-size: 13px; }
+  .whale-tier-LEGENDARY { color: #bc8cff; }
+  .whale-tier-ELITE     { color: #d29922; }
+  .whale-tier-TOP       { color: #3fb950; }
+  .whale-tier-HIGH      { color: #58a6ff; }
+  .whale-tier-SOLID     { color: #79c0ff; }
+  .whale-tier-VOLUME    { color: #8b949e; }
+  .whale-badge {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: #21262d;
+    color: #8b949e;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .whale-wr { margin-left: auto; font-size: 11px; color: #3fb950; font-weight: 700; }
+  .whale-market {
+    font-size: 10px;
+    color: #c9d1d9;
+    padding: 3px 0;
+    border-top: 1px solid #161b22;
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .whale-market-q { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .whale-market-meta { white-space: nowrap; color: #8b949e; }
+  .whale-no-activity { font-size: 10px; color: #484f58; font-style: italic; }
 </style>
 </head>
 <body>
@@ -443,6 +499,9 @@ HTML = """<!DOCTYPE html>
 
   <div class="section-title">🏓 Marchés 50/50 — Ping Pong</div>
   <div id="cards-50-container"></div>
+
+  <div class="section-title">🐋 Whale Tracker — Activité des top traders</div>
+  <div id="whale-container"></div>
 
   <div class="section-title">📊 Top marchés — Volume &amp; Spread</div>
   <div id="table-container"></div>
@@ -631,6 +690,41 @@ function render50_50(markets) {
   container.innerHTML = `<div class="cards-grid">${cards}</div>`;
 }
 
+const TIER_ICONS = {
+  LEGENDARY: '👑', ELITE: '🏆', TOP: '🥇', HIGH: '🥈', SOLID: '🥉', VOLUME: '📊'
+};
+
+function renderWhales(whales) {
+  const container = document.getElementById('whale-container');
+  if (!whales || !whales.length) {
+    container.innerHTML = '<div class="no-50-msg">Aucune donnée whale disponible.</div>';
+    return;
+  }
+  const cards = whales.map(w => {
+    const icon    = TIER_ICONS[w.tier] || '•';
+    const tierCls = 'whale-tier-' + w.tier;
+    const inactive = w.active ? '' : ' inactive';
+    const mkts = w.markets.length
+      ? w.markets.map(m => `
+          <div class="whale-market">
+            <span class="whale-market-q">${m.question}</span>
+            <span class="whale-market-meta">${m.buys ? '<span style="color:#3fb950">'+m.buys+'B</span>' : ''}${m.sells ? ' <span style="color:#f85149">'+m.sells+'S</span>' : ''} · ${m.avg_price}¢</span>
+          </div>`).join('')
+      : '<div class="whale-no-activity">Aucune activité récente</div>';
+    return `
+      <div class="whale-card${inactive}">
+        <div class="whale-header">
+          <span>${icon}</span>
+          <span class="whale-name ${tierCls}">${w.name}</span>
+          <span class="whale-badge">${w.tier}</span>
+          <span class="whale-wr">${w.win_rate}%</span>
+        </div>
+        ${mkts}
+      </div>`;
+  }).join('');
+  container.innerHTML = `<div class="whale-grid">${cards}</div>`;
+}
+
 async function fetchData() {
   try {
     const r = await fetch('/api/markets');
@@ -638,6 +732,7 @@ async function fetchData() {
     if (!data.loading) {
       render(data);
       render50_50(data.markets_50_50);
+      renderWhales(data.whales);
     } else {
       document.getElementById('last-update').textContent = 'Scan en cours...';
     }
