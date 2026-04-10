@@ -1,6 +1,6 @@
 # ⚡ Polymarket Volume Scanner
 
-> **Manual trading coach for Polymarket** — Generate leaderboard volume without losing money.
+> **Manual trading coach for Polymarket** — Volume scanner, whale tracker, sport markets & CLOB leaderboard in one dashboard.
 
 ![Python](https://img.shields.io/badge/Python-3.9+-blue) ![Flask](https://img.shields.io/badge/Flask-Web_Dashboard-green) ![Polymarket](https://img.shields.io/badge/Polymarket-CLOB-purple)
 
@@ -27,22 +27,16 @@ cd polymarket-volume-scanner
 
 ### 2. Install dependencies
 ```bash
-pip3 install requests flask
+pip3 install requests flask flask-socketio
 ```
 
-### 3. Configure your wallet (optional)
-```bash
-cp .env.example .env
-# Edit .env and add your Polymarket wallet address
-```
-
-### 4. Launch the web dashboard
+### 3. Launch the web dashboard
 ```bash
 python3 web_dashboard.py
 ```
 Open **http://localhost:8080** in your browser.
 
-### 5. Or run the terminal scanner
+### 4. Or run the terminal scanner
 ```bash
 python3 polymarket_scanner.py              # Full scan
 python3 polymarket_scanner.py --watch      # Auto-refresh every 60s
@@ -54,13 +48,29 @@ python3 polymarket_scanner.py --top 10     # Show top 10 markets
 
 ## 📊 Web Dashboard
 
-3 tabs:
+4 tabs:
 
 | Tab | Description |
 |-----|-------------|
 | 📊 **Top Markets** | Best markets for volume generation (tight spread, high volume) |
 | ⚽ **Sport of the Day** | Live & upcoming matches in the next 24h (UFC, NBA, soccer, tennis...) |
 | 🐋 **Whale Tracker** | Real-time activity of 41 top Polymarket traders |
+| 🏆 **Leaderboard CLOB** | Full CLOB API leaderboard — find your real rank by proxy wallet |
+
+---
+
+## 🏆 Leaderboard CLOB
+
+The official Polymarket leaderboard only tracks browser-wallet users. If you trade via the **CLOB API** (market making, bots, reward farming), your real stats live on a **proxy wallet**.
+
+Features:
+- **Full leaderboard** — top traders sorted by P&L or Volume, all time / monthly / weekly / daily
+- **Rank Finder** — paste your proxy wallet to see your true P&L, volume, return on volume
+- **Rank estimation** — log-log interpolation gives your estimated rank even outside top 50
+- **Activity stats** — first trade date, fill count, avg fill size, last 10 fills
+- **Share link** — copy a direct URL to any wallet's stats
+
+All data fetched client-side from `lb-api.polymarket.com` — no server changes needed.
 
 ---
 
@@ -107,9 +117,9 @@ FETCH_LIMIT      = 300      # Markets scanned per run
 ```
 polymarket-volume-scanner/
 ├── polymarket_scanner.py   # Core scanner + CLI
-├── web_dashboard.py        # Flask dashboard
+├── web_dashboard.py        # Flask dashboard (all 4 tabs)
 ├── config.py               # Configuration
-├── .env.example            # Environment variables template
+├── requirements.txt        # Dependencies
 └── README.md
 ```
 
@@ -121,7 +131,8 @@ polymarket-volume-scanner/
 |-----|-------|
 | `gamma-api.polymarket.com` | Market metadata |
 | `clob.polymarket.com` | Real-time orderbook |
-| `data-api.polymarket.com` | Wallet activity |
+| `data-api.polymarket.com` | Wallet activity & fills |
+| `lb-api.polymarket.com` | CLOB leaderboard (P&L, volume, rank) |
 
 All **public APIs** — no API key required.
 
